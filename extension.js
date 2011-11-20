@@ -196,6 +196,11 @@ function init(extensionMeta) {
     // do nothing here    
 }
 
+function main() {
+    Panel.STANDARD_TRAY_ICON_ORDER.unshift('temperature');
+    Panel.STANDARD_TRAY_ICON_SHELL_IMPLEMENTATION['temperature'] = DoIt;
+}
+
 function enable() {
     let role = 'temperature';
 

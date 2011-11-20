@@ -5,6 +5,8 @@ const PopupMenu = imports.ui.popupMenu;
 const Main = imports.ui.main;
 const GLib = imports.gi.GLib;
 const Util = imports.misc.util;
+//gnome 3.0
+const Panel = imports.ui.panel;
 
 function CpuTemperature() {
     this._init.apply(this, arguments);
@@ -196,6 +198,7 @@ function init(extensionMeta) {
     // do nothing here    
 }
 
+//gnome3.0
 function main() {
     Panel.STANDARD_TRAY_ICON_ORDER.unshift('temperature');
     Panel.STANDARD_TRAY_ICON_SHELL_IMPLEMENTATION['temperature'] = DoIt;

@@ -201,7 +201,7 @@ function init(extensionMeta) {
 //gnome3.0
 function main() {
     Panel.STANDARD_TRAY_ICON_ORDER.unshift('temperature');
-    Panel.STANDARD_TRAY_ICON_SHELL_IMPLEMENTATION['temperature'] = DoIt;
+    Panel.STANDARD_TRAY_ICON_SHELL_IMPLEMENTATION['temperature'] = CpuTemperature;
 }
 
 function enable() {

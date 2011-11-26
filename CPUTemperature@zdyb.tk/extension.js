@@ -74,7 +74,6 @@ CpuTemperature.prototype = {
 			if (GLib.file_test(file, GLib.FileTest.EXISTS)) {
 				this.get_current_temperature = function () {
 					let temperature = GLib.file_get_contents(file);
-					global.log(file);
 					if (temperature[0]) {
 						return parseInt(temperature[1]) / 1000;
 					} else

@@ -1,0 +1,9 @@
+{
+    "shell-version": ["3.2"],
+    "uuid": "CPUTemperature@zdyb.tk",
+    "name": "CPUTemperature",
+    "description": "Shows current CPU temperature on main panel",
+    "url": "http://github.com/ojo/gnome-shell-extension-cpu-temperature",
+    "author": "Aleksander Zdyb",
+    "original-authors": "Dipesh Acharya"
+}

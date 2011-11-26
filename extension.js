@@ -4,105 +4,119 @@ const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
 const Main = imports.ui.main;
 const GLib = imports.gi.GLib;
-const Util = imports.misc.util;
-//gnome 3.0
-const Panel = imports.ui.panel;
+const Mainloop = imports.mainloop;
+
+const ERROR_LABEL = "---";
+const UPDATE_INTERVAL = 5000;
+const SCALE = "C";
+const cpu_temp_files = [
+	'/sys/devices/platform/coretemp.0/temp1_input',
+	'/sys/bus/acpi/devices/LNXTHERM\:00/thermal_zone/temp',
+	'/sys/devices/virtual/thermal/thermal_zone0/temp',
+	//old kernels with proc fs
+	'/proc/acpi/thermal_zone/THM0/temperature',
+	'/proc/acpi/thermal_zone/THRM/temperature',
+	'/proc/acpi/thermal_zone/THR0/temperature',
+	'/proc/acpi/thermal_zone/TZ0/temperature',
+	'/sys/bus/acpi/drivers/ATK0110/ATK0110:00/hwmon/hwmon0/temp1_input',
+	//hwmon for new 2.6.39, 3.0 linux kernels
+	'/sys/class/hwmon/hwmon0/temp1_input',
+	//Debian Sid/Experimental on AMD-64
+	'/sys/class/hwmon/hwmon0/device/temp1_input'
+];
+
+let cpu_temp;
 
 function CpuTemperature() {
     this._init.apply(this, arguments);
 }
 
 CpuTemperature.prototype = {
-    __proto__: PanelMenu.SystemStatusButton.prototype,
+    __proto__: PanelMenu.Button.prototype,
+	
+	run: false,
 	
     _init: function(){
-        PanelMenu.SystemStatusButton.prototype._init.call(this, 'temperature');
-        
-        this.statusLabel = new St.Label({ text: '-' });
-        // destroy all previously created children, and add our statusLabel
-        this.actor.get_children().forEach(function(c) { c.destroy() });
-        this.actor.add_actor(this.statusLabel);
-        
-        this._update_temp();
-        //update every 15 seconds
-        GLib.timeout_add(0, 15000, Lang.bind(this, function () {
-            this._update_temp();
-            return true;
-        }));
+        PanelMenu.Button.prototype._init.call(this, "temperature");
+        this.build_ui();
+		this.find_temperatures();
     },
 	
-    _update_temp: function() {
-        let title='Error';
-        let content='Click here to report!';
-        let command=["firefox", "http://github.com/xtranophilist/gnome-shell-extension-cpu-temperature/issues/"];
+	Run: function() {
+		this.run = true;
+		this.update_temperature();
+		Mainloop.timeout_add(UPDATE_INTERVAL, Lang.bind(this, this.update_temperature));
+	},
+	
+	Stop: function() {
+		this.run = false;
+	},
+	
+	build_ui: function() {
+		this.statusLabel = new St.Label({ text: ERROR_LABEL, style_class: "temperature-label" });
+		
+		this.icon = new St.Icon({
+			icon_type: St.IconType.SYMBOLIC,
+			style_class: "popup-menu-icon",
+			icon_name: "utilities-system-monitor"
+		});
+		
+		this.box = new St.BoxLayout();
+		
+        this.box.add_actor(this.icon);
+        this.box.add_actor(this.statusLabel);
         
-        let foundTemperature=false;
-        let cpuTemperatureInfo = ['/sys/devices/platform/coretemp.0/temp1_input',
-            '/sys/bus/acpi/devices/LNXTHERM\:00/thermal_zone/temp',
-            '/sys/devices/virtual/thermal/thermal_zone0/temp',
-            //old kernels with proc fs
-            '/proc/acpi/thermal_zone/THM0/temperature',
-            '/proc/acpi/thermal_zone/THRM/temperature',
-            '/proc/acpi/thermal_zone/THR0/temperature',
-            '/proc/acpi/thermal_zone/TZ0/temperature',
-            '/sys/bus/acpi/drivers/ATK0110/ATK0110:00/hwmon/hwmon0/temp1_input',
-            //hwmon for new 2.6.39, 3.0 linux kernels
-            '/sys/class/hwmon/hwmon0/temp1_input',
-            //Debian Sid/Experimental on AMD-64
-            '/sys/class/hwmon/hwmon0/device/temp1_input'];
-        
-        for (let i=0;i<cpuTemperatureInfo.length;i++){
-            if(GLib.file_test(cpuTemperatureInfo[i],1<<4)){
-                let temperature = GLib.file_get_contents(cpuTemperatureInfo[i]);
-                if(temperature[0]) {
-                    let c = parseInt(temperature[1])/1000;
-                    title=this._getTitle(c);
-                    content=this._getContent(c);
-                    command=["echo"];
-                    foundTemperature = true;
-                }
-                if(foundTemperature) break;
-            }
-        }
- 
-        if (!foundTemperature) {
-            let foundSensor = 0;
-            let sensorInfo = ['/usr/bin/sensors',
-                '/bin/sensors'];
-            for (let i=0;i<sensorInfo.length;i++){
-                if(GLib.file_test(sensorInfo[i],1<<4)) foundSensor=sensorInfo[i];
-                if (foundSensor) break;
-            }
-            if(foundSensor) {
-                let sensors = GLib.spawn_command_line_sync(foundSensor);
-                if(sensors[0]){
-                    let temp=this._findTemperatureFromSensorsOutput(sensors[1]);
-                    title=this._getTitle(temp);
-                    content=this._getContent(temp);
-                    command=["echo"];
-                }
-            }
-            else {
-                title="Warning";
-                content="Please install lm-sensors";
-                command=["echo"];
-            }
-        }
-        
-        this.statusLabel.set_text(title);
-        this.menu.box.get_children().forEach(function(c) { c.destroy() });
-
-        let section = new PopupMenu.PopupMenuSection("Temperature");
-        let item = new PopupMenu.PopupMenuItem("");
-        item.addActor(new St.Label({ text:content, style_class: "sm-label"}));
-        item.connect('activate', function() {
-            Util.spawn(command);
-        });
-
-        section.addMenuItem(item);
-        this.menu.addMenuItem(section);
+		this.actor.add_actor(this.box);
+	},
+	
+	find_temperatures: function() {
+		for each (let file in cpu_temp_files) {
+			if (GLib.file_test(file, GLib.FileTest.EXISTS)) {
+				this.get_current_temperature = function () {
+					let temperature = GLib.file_get_contents(file);
+					global.log(file);
+					if (temperature[0]) {
+						return parseInt(temperature[1]) / 1000;
+					} else
+						return null;
+				}
+				return true;
+			}
+		}
+		
+		let ret = GLib.spawn_command_line_sync("which --skip-alias sensors");
+		if ( (ret[0]) && (ret[3] == 0) ) {
+			let sensors_path = ret[1].toString().split("\n", 1)[0];
+			this.get_current_temperature = function() {
+				let sensors = GLib.spawn_command_line_sync(sensors_path);
+                if(sensors[0]) {
+                    return this._findTemperatureFromSensorsOutput(sensors[1].toString());
+				} else
+					return null;
+			}
+			return true;
+		}
+		return false;
+	},
+	
+	get_current_temperature: function() {
+		return null;
+	},
+	
+    update_temperature: function() {
+		let current_temp = this.get_current_temperature();
+		if (current_temp == null)
+			this.statusLabel = ERROR_LABEL;
+        else
+			this.statusLabel.set_text(this.formatTemperature(current_temp));
+		
+		return this.run;
     },
 
+	/**
+	 * Original function by xtranophilist (Dipesh Acharya)
+	 * https://github.com/xtranophilist/gnome-shell-extension-cpu-temperature
+	 */
     _findTemperatureFromSensorsOutput: function(text){
         let senses_lines=text.split("\n");
         let line = '';
@@ -182,44 +196,28 @@ CpuTemperature.prototype = {
     _toFahrenheit: function(c){
         return ((9/5)*c+32).toFixed(1);
     },
-
-    _getContent: function(c){
-        return c.toString()+"\u1d3cC / "+this._toFahrenheit(c).toString()+"\u1d3cF";
-    },
-
-    _getTitle: function(c) {
-        return c.toString()+"\u1d3cC";
-        //comment the last line and uncomment the next line to display temperature in Fahrenheit
-        //return this._toFahrenheit(c).toString()+"\u1d3cF";
-    }
+	
+	formatTemperature: function(temp_celsius) {
+		// TODO: Get scale from locale (Celsius or Fahrenheit)
+		if (SCALE == "F") temp_celsius = this._toFahrenheit(temp_celsius);
+		return temp_celsius.toString() + " \u00b0" + SCALE;
+	}
 }
 
 function init(extensionMeta) {
-    // do nothing here    
+	cpu_temp = new CpuTemperature();
+    Main.panel._rightBox.insert_actor(cpu_temp.actor, 0);
+	Main.panel._menus.addMenu(cpu_temp.menu);
 }
 
-//gnome3.0
-function main() {
-    Panel.STANDARD_TRAY_ICON_ORDER.unshift('temperature');
-    Panel.STANDARD_TRAY_ICON_SHELL_IMPLEMENTATION['temperature'] = CpuTemperature;
-}
 
 function enable() {
-    let role = 'temperature';
-
-    if(Main.panel._status_area_order.indexOf(role) == -1) {
-        Main.panel._status_area_order.unshift(role);
-        Main.panel._status_area_shell_implementation[role] = CpuTemperature;
-    
-        let constructor = Main.panel._status_area_shell_implementation[role];
-        let indicator = new constructor();
-        Main.panel.addToStatusArea(role, indicator, 0);
-    } else {
-        Main.panel._statusArea['temperature'].actor.show();
-    }
+	cpu_temp.actor.show();
+	cpu_temp.Run();
 }
 
 function disable() {
-    Main.panel._statusArea['temperature'].actor.hide();
+	cpu_temp.actor.hide();
+	cpu_temp.Stop();
 }
 
